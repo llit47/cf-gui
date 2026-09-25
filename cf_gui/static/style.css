@@ -37,7 +37,7 @@ input:focus { outline: 2px solid #70b5dc; border-color: #0d709f; }
 .check { display: flex; align-items: center; gap: 8px; font-weight: 450; }
 .form-actions { margin-top: 26px; }
 .full { width: 100%; margin-top: 22px; }
-.notice { padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; overflow-wrap: anywhere; background: #e3f4e9; color: #19613b; }
+.notice { padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; white-space: pre-wrap; overflow-wrap: anywhere; background: #e3f4e9; color: #19613b; }
 .notice.error { background: #fdebec; color: #952d35; }
 .empty { padding: 20px; color: #60798a; }
 .state { font-size: .83rem; font-weight: 750; }
