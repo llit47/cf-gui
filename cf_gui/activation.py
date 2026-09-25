@@ -46,10 +46,9 @@ class ActivationResult:
             lines.append("Poprzedni config został przywrócony.")
         if self.rollback:
             lines.append(f"Restart po rollbacku: {self.rollback.restart.output}")
+            lines.append(f"Status systemd po rollbacku: {self.rollback.status.output}")
             lines.append(f"Stan po rollbacku: {self.rollback.active.output}")
-            if not self.rollback.ok:
-                lines.append(f"Status systemd: {self.rollback.status.output}")
-                lines.append(f"Dziennik: {self.rollback.logs.output}")
+            lines.append(f"Dziennik po rollbacku: {self.rollback.logs.output}")
         return "\n".join(lines)
 
 

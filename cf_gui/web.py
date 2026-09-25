@@ -39,8 +39,12 @@ def create_app(*, config_path: str | None = None, password_hash: str | None = No
     def config_error(error):
         return render_template("error.html", title="Błąd konfiguracji", message=str(error)), 500
 
-    def activation_notice(result: ActivationResult) -> None:
-        flash(result.message(), "success" if result.state == "succeeded" else "error")
+    def activation_response(result: ActivationResult):
+        if result.state == "succeeded":
+            flash(f"Aktywacja zakończona sukcesem. Backup: {result.backup}.", "success")
+            return None
+        status = 409 if result.state == "rolled_back" else 500
+        return render_template("activation_result.html", result=result), status
 
     @app.get("/login")
     def login():
@@ -91,8 +95,10 @@ def create_app(*, config_path: str | None = None, password_hash: str | None = No
             return render_template("entry_form.html", title="Dodaj wpis", action=url_for("add_entry"),
                                    hostname=hostname, service=request.form.get("service", ""),
                                    is_new=True, revision=revision), 400
-        activation_notice(result)
-        if result.state == "succeeded" and request.form.get("create_dns"):
+        failure_response = activation_response(result)
+        if failure_response is not None:
+            return failure_response
+        if request.form.get("create_dns"):
             _route_dns(store.load(), hostname)
         return redirect(url_for("index"))
 
@@ -122,7 +128,9 @@ def create_app(*, config_path: str | None = None, password_hash: str | None = No
             flash(str(exc), "error")
             return render_template("entry_form.html", title="Edytuj wpis", action=url_for("update_entry", index=index),
                                    hostname=hostname, service=service, is_new=False, revision=revision), 400
-        activation_notice(result)
+        failure_response = activation_response(result)
+        if failure_response is not None:
+            return failure_response
         return redirect(url_for("index"))
 
     @app.post("/ingress/<int:index>/delete")
@@ -135,7 +143,9 @@ def create_app(*, config_path: str | None = None, password_hash: str | None = No
         except ConfigError as exc:
             flash(str(exc), "error")
             return redirect(url_for("index"))
-        activation_notice(result)
+        failure_response = activation_response(result)
+        if failure_response is not None:
+            return failure_response
         return redirect(url_for("index"))
 
     def _route_dns(document: dict, hostname: str) -> None:

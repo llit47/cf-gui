@@ -108,16 +108,80 @@ def test_invalid_cloudflared_config_is_shown_without_activation(tmp_path):
     restart.assert_not_called()
 
 
-def test_rollback_status_is_distinct_in_gui(tmp_path):
+def test_rolled_back_response_contains_full_diagnostics(tmp_path):
     path, client = client_for(tmp_path)
     form = client.get("/ingress/0/edit")
+    first = (result(False, "first restart output"), result(False, "first status output"),
+             result(True, "first journal output"))
+    second = (result(True, "second restart output"), result(True, "second status output"),
+              result(True, "second journal output"))
     with patch("cf_gui.cloudflared.validate_config", return_value=result()), \
-         patch("cf_gui.cloudflared.restart_service", side_effect=[service_results(False), service_results(True)]), \
-         patch("cf_gui.cloudflared.is_active", side_effect=[result(False, "failed"), result(True, "active")]):
+         patch("cf_gui.cloudflared.restart_service", side_effect=[first, second]), \
+         patch("cf_gui.cloudflared.is_active", side_effect=[result(False, "first is-active output"),
+                                                            result(True, "second is-active output")]), \
+         patch("cf_gui.web.flash") as flash:
         response = client.post("/ingress/0", data={
             "csrf_token": field(form, "csrf_token"), "revision": field(form, "revision"),
             "hostname": "changed.example.com", "service": "http://localhost:4000"
-        }, follow_redirects=True)
-    assert response.status_code == 200
-    assert "rollback zakończony sukcesem".encode() in response.data
+        })
+    assert response.status_code == 409
+    flash.assert_not_called()
+    assert "Żądana zmiana nie została aktywowana".encode() in response.data
+    for marker in ("first restart output", "first status output", "first is-active output",
+                   "first journal output", "Poprzedni config został przywrócony",
+                   "second restart output", "second status output", "second is-active output",
+                   "second journal output"):
+        assert marker.encode() in response.data
     assert path.read_text() == SOURCE
+
+
+def test_rollback_failed_response_contains_full_diagnostics(tmp_path):
+    path, client = client_for(tmp_path)
+    form = client.get("/ingress/0/edit")
+    first = (result(False, "first restart failed"), result(False, "first status failed"),
+             result(True, "first journal failure"))
+    second = (result(False, "second restart failed"), result(False, "second status failed"),
+              result(True, "second journal failure"))
+    with patch("cf_gui.cloudflared.validate_config", return_value=result()), \
+         patch("cf_gui.cloudflared.restart_service", side_effect=[first, second]), \
+         patch("cf_gui.cloudflared.is_active", side_effect=[result(False, "first inactive"),
+                                                            result(False, "second inactive")]):
+        response = client.post("/ingress/0", data={
+            "csrf_token": field(form, "csrf_token"), "revision": field(form, "revision"),
+            "hostname": "changed.example.com", "service": "http://localhost:4000"
+        })
+    assert response.status_code == 500
+    assert "Aktywacja i rollback nieudane".encode() in response.data
+    for marker in ("first restart failed", "first status failed", "first inactive",
+                   "first journal failure", "Poprzedni config został przywrócony",
+                   "second restart failed", "second status failed", "second inactive",
+                   "second journal failure"):
+        assert marker.encode() in response.data
+    assert path.read_text() == SOURCE
+
+
+def test_long_diagnostics_are_in_body_not_session_cookie(tmp_path):
+    from cf_gui.config import ConfigError
+
+    path, client = client_for(tmp_path)
+    form = client.get("/ingress/0/edit")
+    long_journal = "JOURNAL-BEGIN:" + "".join(f"{value:05d}:diagnostic;" for value in range(1500)) + ":JOURNAL-END"
+    first = (result(False, "restart failed"), result(False, "status failed"), result(True, long_journal))
+    with patch("cf_gui.cloudflared.validate_config", return_value=result()), \
+         patch("cf_gui.cloudflared.restart_service", return_value=first), \
+         patch("cf_gui.cloudflared.is_active", return_value=result(False, "inactive")), \
+         patch("cf_gui.config.ConfigStore.restore", side_effect=ConfigError("restore failed")), \
+         patch("cf_gui.web.flash") as flash:
+        response = client.post("/ingress/0", data={
+            "csrf_token": field(form, "csrf_token"), "revision": field(form, "revision"),
+            "hostname": "changed.example.com", "service": "http://localhost:4000"
+        })
+    assert response.status_code == 500
+    flash.assert_not_called()
+    assert long_journal.encode() in response.data
+    assert b"restore failed" in response.data
+    with client.session_transaction() as session:
+        assert "_flashes" not in session
+        assert "JOURNAL-BEGIN" not in str(dict(session))
+    assert all(len(header) < 4096 for header in response.headers.getlist("Set-Cookie"))
+    assert "changed.example.com" in path.read_text()  # restore failed; candidate remains

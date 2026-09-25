@@ -89,3 +89,10 @@ Zrobione: candidate YAML jest walidowany przez `cloudflared tunnel --config <can
 Decyzja: `cloudflared-manager` nie używa naszego locka; przed końcowym sprawdzeniem revision jego zmiany są wykrywane, lecz pozostaje krótki wyścig z writerem zewnętrznym między sprawdzeniem a atomową podmianą. Po wykryciu późniejszej obcej zmiany rollback nie nadpisuje jej. Zachowano PyYAML, root service, bind i model jednego administratora.
 
 Weryfikacja: rozszerzone testy obejmują walidację, backup, rollback obu wyników, stale revision, błędny indeks, metadata i blokadę równoległych mutacji. `pytest -q`: 28 testów zaliczonych. `compileall`, `bash -n` i `git diff --check` przeszły. Nadal potrzebny test z prawdziwym cloudflared/systemd na testowym LXC.
+
+
+## PR 1 — poprawka po Codex Review: diagnostyka poza cookie
+
+Zrobione: po sukcesie aktywacji pozostaje krótki flash i redirect. Wynik `rolled_back` jest renderowany bezpośrednio w HTTP 409, a `rollback_failed` w HTTP 500. Strona pokazuje oba restarty, statusy systemd, `is-active`, logi oraz wynik przywracania pliku, jeśli dany krok wystąpił. Żadna diagnostyka aktywacji/rollbacku nie jest zapisywana w sesji Flask.
+
+Weryfikacja: test bardzo długiego dziennika potwierdza obecność treści w body i brak wywołania `flash()`, brak `_flashes` w sesji oraz brak dużego nagłówka cookie; testy sprawdzają komplet informacji dla obu stanów błędu. Pełne `pytest -q`: 30 testów zaliczonych. `compileall`, `bash -n` i `git diff --check` przeszły. Logika candidate, walidacji, revision, locka i rollbacku nie została zmieniona.
