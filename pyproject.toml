@@ -10,3 +10,13 @@ test = ["pytest>=8,<9"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["cf_gui"]
+
+[tool.setuptools.package-data]
+cf_gui = ["templates/*.html", "static/*.css"]

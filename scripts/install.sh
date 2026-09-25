@@ -29,7 +29,7 @@ PASSWORD_HASH=$("$APP_DIR/.venv/bin/python" -c 'import sys; from werkzeug.securi
 SECRET_KEY=$("$APP_DIR/.venv/bin/python" -c 'import secrets; print(secrets.token_urlsafe(48))')
 CONFIG_PATH=${CF_GUI_CONFIG_PATH:-/etc/cloudflared/config.yml}
 START_PORT=${CF_GUI_PORT:-8000}
-if [[ $CONFIG_PATH == *$'\n'* || $CONFIG_PATH == *$'\r'* || ! $START_PORT =~ ^[0-9]+$ ]]; then
+if [[ $CONFIG_PATH == *$'\n'* || $CONFIG_PATH == *$'\r'* || ! $START_PORT =~ ^[0-9]+$ ]] || (( START_PORT < 1 || START_PORT > 65535 )); then
   echo 'Nieprawidłowe CF_GUI_CONFIG_PATH lub CF_GUI_PORT.' >&2
   exit 1
 fi
@@ -67,6 +67,7 @@ cat > /usr/local/bin/cf-gui-update <<'UPDATEEOF'
 exec /opt/cf-gui/scripts/update.sh "$@"
 UPDATEEOF
 chmod 755 /usr/local/bin/cf-gui-update
+echo "Hasło admina (zapisz teraz): $ADMIN_PASSWORD"
 systemctl daemon-reload
 systemctl enable --now cf-gui.service
 sleep 2
@@ -75,6 +76,5 @@ if ! systemctl is-active --quiet cf-gui.service; then
   exit 1
 fi
 PORT_LINE=$(journalctl -u cf-gui.service -n 30 -o cat --no-pager 2>/dev/null | grep 'cf-gui listening on ' | tail -n 1 || true)
-echo "Hasło admina (zapisz teraz): $ADMIN_PASSWORD"
 echo "${PORT_LINE:-Port sprawdź poleceniem: journalctl -u cf-gui -n 30 --no-pager}"
 echo 'Aktualizacja: cf-gui-update'

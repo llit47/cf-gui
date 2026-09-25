@@ -63,3 +63,11 @@ Zrobione: `scripts/update.sh`, uruchamiany unikalną komendą `cf-gui-update`, p
 Decyzja: config YAML, hasło i sekret leżą poza repo `/opt/cf-gui`, więc aktualizacja ich nie dotyka. Skrypt nie używa nazw ani ścieżek cloudflared-manager.
 
 Dalej: finalna dokumentacja oraz weryfikacja.
+
+## Etap I — dokumentacja i przegląd
+
+Zrobione: pełne README z instalacją, obsługą, aktualizacją, ograniczeniami YAML i testowym LXC. Dodano metadane pakowania, aby szablony i CSS trafiły do instalowanego pakietu. Installer wypisuje hasło przed startem usługi.
+
+Weryfikacja: `compileall` i `bash -n` przeszły. Testy pytest nie mogły tu ruszyć: w środowisku roboczym brakuje `pytest`, `Flask`, `PyYAML` i pakietu systemowego `python3-venv`. Uruchomić `pytest -q` na testowym LXC po instalacji zależności.
+
+Dalej: test instalacji i działania na testowym LXC, potem wdrożenie produkcyjne.
