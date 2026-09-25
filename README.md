@@ -44,6 +44,8 @@ Usługa działa jako root, ponieważ zapisuje systemowy config cloudflared i wyk
 4. Przy dodawaniu można zaznaczyć tworzenie DNS, co wywołuje `cloudflared tunnel route dns <tunnel> <hostname>` tylko po udanej aktywacji. Przycisk „Utwórz DNS” przy wpisie umożliwia ponowienie tej akcji. Pole `tunnel` musi być obecne w YAML. Sukces daje krótki komunikat; przy błędzie pełny output komendy jest pokazany bezpośrednio na stronie.
 5. W zakładce „Usługa” sprawdź status systemd i ostatnie 20 linii `journalctl`. Przycisk ręcznego restartu pozostaje dostępny.
 
+Interfejs automatycznie dopasowuje jasny lub ciemny motyw do ustawień systemu. Krótkie komunikaty sukcesu i informacji znikają po około 4 sekundach; błędy, ostrzeżenia i diagnostyka pozostają widoczne.
+
 ### Bezpieczna aktywacja configu
 
 Dla każdej mutacji `ingress` aplikacja trzyma advisory lock w pliku obok configu przez cały odcinek `read → revision check → candidate → validate → backup → atomic replace → restart/status → ewentualny rollback`. Lock serializuje zapisy dwóch procesów `cf-gui` oraz ręczny restart z panelu. Każdy formularz wysyła SHA-256 z **dokładnych bajtów pliku**, które były widoczne przy jego wyświetleniu. Po wejściu pod lock i ponownie tuż przed podmianą aplikacja sprawdza revision; konflikt odrzuca mutację i wymaga odświeżenia strony.

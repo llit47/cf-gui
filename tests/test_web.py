@@ -1,5 +1,6 @@
 """Exercise login and revision-aware mutations through Flask's HTTP client."""
 
+from html.parser import HTMLParser
 import re
 from unittest.mock import patch
 
@@ -46,6 +47,35 @@ def client_for(tmp_path):
                            follow_redirects=True)
     assert response.status_code == 200
     return path, client
+
+
+def test_only_success_and_info_notices_auto_dismiss(tmp_path):
+    _, client = client_for(tmp_path)
+    with client.session_transaction() as session:
+        session["_flashes"] = [("success", "saved"), ("info", "ready"),
+                               ("warning", "check"), ("error", "failed")]
+
+    class Notices(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.items = {}
+
+        def handle_starttag(self, tag, attrs):
+            attributes = dict(attrs)
+            classes = attributes.get("class", "").split()
+            if tag == "div" and "notice" in classes:
+                self.items[classes[1]] = attributes
+
+    response = client.get("/")
+    notices = Notices()
+    notices.feed(response.get_data(as_text=True))
+    assert response.status_code == 200
+    for category in ("success", "info"):
+        assert "data-auto-dismiss" in notices.items[category]
+        assert notices.items[category]["role"] == "status"
+    for category in ("warning", "error"):
+        assert "data-auto-dismiss" not in notices.items[category]
+        assert notices.items[category]["role"] == "alert"
 
 
 def test_login_add_dns_and_restart(tmp_path):
