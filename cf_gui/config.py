@@ -1,11 +1,15 @@
-"""Read and update the cloudflared YAML configuration."""
+"""Read cloudflared YAML and prepare atomic, revision-checked file updates."""
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+import fcntl
+import hashlib
 import os
-import shutil
+from pathlib import Path
+import stat
 import tempfile
 
 import yaml
@@ -15,9 +19,26 @@ class ConfigError(Exception):
     """Invalid or unavailable cloudflared configuration."""
 
 
+class StaleConfigError(ConfigError):
+    """The config changed after the form was displayed."""
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    document: dict
+    content: bytes
+    revision: str
+    metadata: os.stat_result
+
+
+def fingerprint(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
 class ConfigStore:
     def __init__(self, path: str | Path):
         self.path = Path(path)
+        self.lock_path = self.path.with_name(f"{self.path.name}.cf-gui.lock")
 
     @staticmethod
     def _validate(document: object) -> dict:
@@ -33,46 +54,125 @@ class ConfigStore:
                 raise ConfigError(f"Wpis ingress {position + 1} ma nieprawidłowy hostname.")
         return document
 
-    def load(self) -> dict:
+    def load_snapshot(self) -> Snapshot:
         try:
-            content = self.path.read_text(encoding="utf-8")
-            return self._validate(yaml.safe_load(content))
-        except (OSError, yaml.YAMLError) as exc:
+            with self.path.open("rb") as source:
+                content = source.read()
+                metadata = os.fstat(source.fileno())
+            document = self._validate(yaml.safe_load(content.decode("utf-8")))
+            return Snapshot(document, content, fingerprint(content), metadata)
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
             raise ConfigError(f"Nie można odczytać konfiguracji: {exc}") from exc
 
-    def save(self, document: dict) -> Path | None:
-        self._validate(document)
-        try:
-            content = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
-            self._validate(yaml.safe_load(content))  # validate generated YAML before touching disk
-        except yaml.YAMLError as exc:
-            raise ConfigError(f"Niepoprawny YAML: {exc}") from exc
+    def load(self) -> dict:
+        return self.load_snapshot().document
 
-        temp_name = None
+    def assert_revision(self, expected: str) -> os.stat_result:
+        try:
+            with self.path.open("rb") as source:
+                content = source.read()
+                metadata = os.fstat(source.fileno())
+        except FileNotFoundError as exc:
+            raise StaleConfigError("Konfiguracja zmieniła się od otwarcia formularza. Odśwież stronę i spróbuj ponownie.") from exc
+        except OSError as exc:
+            raise ConfigError(f"Nie można sprawdzić konfiguracji: {exc}") from exc
+        if not expected or fingerprint(content) != expected:
+            raise StaleConfigError("Konfiguracja zmieniła się od otwarcia formularza. Odśwież stronę i spróbuj ponownie.")
+        return metadata
+
+    @contextmanager
+    def write_lock(self):
+        """Serialize cf-gui writers across processes for the whole activation."""
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            old_exists = self.path.exists()
-            backup = None
-            if old_exists:
-                stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-                backup = self.path.with_name(f"{self.path.name}.bak.{stamp}")
-                shutil.copy2(self.path, backup)  # complete before replacement
-            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=self.path.parent, prefix=f".{self.path.name}.", delete=False) as temp:
-                temp_name = temp.name
-                temp.write(content)
-                temp.flush()
-                os.fsync(temp.fileno())
-            if old_exists:
-                os.chmod(temp_name, self.path.stat().st_mode)
-            else:
-                os.chmod(temp_name, 0o600)
-            os.replace(temp_name, self.path)
+            descriptor = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        except OSError as exc:
+            raise ConfigError(f"Nie można otworzyć blokady konfiguracji: {exc}") from exc
+        try:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+            except OSError as exc:
+                raise ConfigError(f"Nie można zablokować konfiguracji: {exc}") from exc
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+
+    @staticmethod
+    def apply_metadata(path: Path, metadata: os.stat_result | None) -> None:
+        if metadata is None:
+            os.chmod(path, 0o600)
+            return
+        current = path.stat()
+        if (current.st_uid, current.st_gid) != (metadata.st_uid, metadata.st_gid):
+            os.chown(path, metadata.st_uid, metadata.st_gid)
+        os.chmod(path, stat.S_IMODE(metadata.st_mode))
+
+    def _temporary_file(self, content: bytes, metadata: os.stat_result | None = None) -> Path:
+        path = None
+        try:
+            descriptor, name = tempfile.mkstemp(prefix=f".{self.path.name}.", suffix=".yml", dir=self.path.parent)
+            path = Path(name)
+            with os.fdopen(descriptor, "wb") as target:
+                target.write(content)
+                target.flush()
+                os.fsync(target.fileno())
+            self.apply_metadata(path, metadata)
+            return path
+        except OSError as exc:
+            if path is not None:
+                path.unlink(missing_ok=True)
+            raise ConfigError(f"Nie można przygotować pliku konfiguracji: {exc}") from exc
+
+    def candidate(self, document: dict) -> Path:
+        self._validate(document)
+        try:
+            content = yaml.safe_dump(document, sort_keys=False, allow_unicode=True).encode("utf-8")
+            self._validate(yaml.safe_load(content.decode("utf-8")))
+        except yaml.YAMLError as exc:
+            raise ConfigError(f"Niepoprawny YAML: {exc}") from exc
+        return self._temporary_file(content)  # private mode until validation succeeds
+
+    def backup(self, snapshot: Snapshot) -> Path:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        backup = self.path.with_name(f"{self.path.name}.bak.{stamp}")
+        created = False
+        try:
+            with backup.open("xb") as target:
+                created = True
+                target.write(snapshot.content)
+                target.flush()
+                os.fsync(target.fileno())
+            self.apply_metadata(backup, snapshot.metadata)
             return backup
         except OSError as exc:
-            raise ConfigError(f"Nie można zapisać konfiguracji: {exc}") from exc
+            if created:
+                backup.unlink(missing_ok=True)
+            raise ConfigError(f"Nie można utworzyć backupu: {exc}") from exc
+
+    def replace(self, candidate: Path, metadata: os.stat_result | None) -> None:
+        try:
+            self.apply_metadata(candidate, metadata)
+            os.replace(candidate, self.path)
+        except OSError as exc:
+            raise ConfigError(f"Nie można aktywować konfiguracji: {exc}") from exc
+
+    def restore(self, backup: Path | None, metadata: os.stat_result | None) -> None:
+        if backup is None:
+            try:
+                self.path.unlink()
+            except OSError as exc:
+                raise ConfigError(f"Nie można usunąć nowego configu przy rollbacku: {exc}") from exc
+            return
+        try:
+            content = backup.read_bytes()
+        except OSError as exc:
+            raise ConfigError(f"Nie można odczytać backupu: {exc}") from exc
+        restored = self._temporary_file(content, metadata)
+        try:
+            self.replace(restored, metadata)
         finally:
-            if temp_name and os.path.exists(temp_name):
-                os.unlink(temp_name)
+            restored.unlink(missing_ok=True)
 
     @staticmethod
     def entries(document: dict) -> list[tuple[int, str, str]]:

@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Wynik aktywacji · cf-gui{% endblock %}
+{% block content %}
+<section class="card">
+  <p class="eyebrow">Cloudflare Tunnel</p>
+  {% if result.state == 'rolled_back' %}
+    <h1>Aktywacja nieudana; rollback udany</h1>
+    <p>Żądana zmiana nie została aktywowana. Poprzedni config został przywrócony.</p>
+  {% else %}
+    <h1>Aktywacja i rollback nieudane</h1>
+    <p>Żądana zmiana nie została poprawnie aktywowana. Sprawdź stan configu i usługi cloudflared.</p>
+  {% endif %}
+  <h2>Pełna diagnostyka</h2>
+  <pre>{{ result.message() }}</pre>
+  <a class="button" href="{{ url_for('index') }}">Wróć do ingress</a>
+  <a class="button" href="{{ url_for('service') }}">Status usługi</a>
+</section>
+{% endblock %}

@@ -80,3 +80,26 @@ Zrobione: utworzono osobne `.venv` projektu, zainstalowano zależności i dodano
 Decyzja: systemowy Python w tym kontenerze nie ma `ensurepip`, więc własne `.venv` utworzono opcją `--without-pip`, a pip doinstalowano przez istniejące narzędzie; środowisko testowe pozostaje odrębne od sąsiedniego projektu.
 
 Dalej: wypchnąć repo do GitHub i przetestować installer oraz integrację z prawdziwym cloudflared na testowym LXC.
+
+
+## PR 1 — bezpieczna aktywacja configu (branch `pr1-safe-config-activation`)
+
+Zrobione: candidate YAML jest walidowany przez `cloudflared tunnel --config <candidate> ingress validate` przed backupem i podmianą. Po atomowej aktywacji aplikacja restartuje usługę, sprawdza `is-active` i w razie niepowodzenia przywraca backup oraz ponawia restart. GUI rozróżnia sukces, udany rollback i nieudany rollback, pokazując diagnostykę. Mode, uid i gid istniejącego configu są zachowywane. SHA-256 dokładnej zawartości pliku jest wysyłany w formularzach i sprawdzany pod advisory lock przed zapisem. Lock obejmuje całą aktywację i serializuje mutacje procesów `cf-gui`.
+
+Decyzja: `cloudflared-manager` nie używa naszego locka; przed końcowym sprawdzeniem revision jego zmiany są wykrywane, lecz pozostaje krótki wyścig z writerem zewnętrznym między sprawdzeniem a atomową podmianą. Po wykryciu późniejszej obcej zmiany rollback nie nadpisuje jej. Zachowano PyYAML, root service, bind i model jednego administratora.
+
+Weryfikacja: rozszerzone testy obejmują walidację, backup, rollback obu wyników, stale revision, błędny indeks, metadata i blokadę równoległych mutacji. `pytest -q`: 28 testów zaliczonych. `compileall`, `bash -n` i `git diff --check` przeszły. Nadal potrzebny test z prawdziwym cloudflared/systemd na testowym LXC.
+
+
+## PR 1 — poprawka po Codex Review: diagnostyka poza cookie
+
+Zrobione: po sukcesie aktywacji pozostaje krótki flash i redirect. Wynik `rolled_back` jest renderowany bezpośrednio w HTTP 409, a `rollback_failed` w HTTP 500. Strona pokazuje oba restarty, statusy systemd, `is-active`, logi oraz wynik przywracania pliku, jeśli dany krok wystąpił. Żadna diagnostyka aktywacji/rollbacku nie jest zapisywana w sesji Flask.
+
+Weryfikacja: test bardzo długiego dziennika potwierdza obecność treści w body i brak wywołania `flash()`, brak `_flashes` w sesji oraz brak dużego nagłówka cookie; testy sprawdzają komplet informacji dla obu stanów błędu. Pełne `pytest -q`: 30 testów zaliczonych. `compileall`, `bash -n` i `git diff --check` przeszły. Logika candidate, walidacji, revision, locka i rollbacku nie została zmieniona.
+
+
+## PR 1 — poprawka po Codex Review: output CLI poza sesją
+
+Zrobione: odrzucony candidate ma osobny typ błędu z pełną diagnostyką; GUI pokazuje ją w body wraz z informacją, że aktywny config nie został zmieniony i nie było restartu. Błąd `route dns` pokazuje pełny output w body, a sukces używa krótkiego stałego komunikatu. Pozostałe błędy formularza są prezentowane bez `flash(str(exc))`. Nie zmieniono wykonania komend ani logiki aktywacji.
+
+Decyzja: ogólna zasada prezentacji to brak surowego outputu `cloudflared`, `systemctl` i `journalctl` w sesji cookie. Pełna diagnostyka trafia bezpośrednio do odpowiedzi HTTP. Testy obejmują długie wyniki walidacji i DNS oraz brak ich treści w sesji. Pełne `pytest -q`: 36 testów zaliczonych; `compileall`, `bash -n` i `git diff --check` przeszły. Nadal potrzebna jest weryfikacja na testowym LXC z prawdziwym `cloudflared`.

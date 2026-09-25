@@ -17,10 +17,12 @@
         <a class="button small" href="{{ url_for('edit_entry', index=index) }}">Edytuj</a>
         <form method="post" action="{{ url_for('route_entry_dns', index=index) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="revision" value="{{ revision }}">
           <button class="button small" type="submit">Utwórz DNS</button>
         </form>
         <form method="post" action="{{ url_for('delete_entry', index=index) }}" onsubmit="return confirm('Usunąć ten wpis ingress?')">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="revision" value="{{ revision }}">
           <button class="button small danger" type="submit">Usuń</button>
         </form>
       </div></td>
@@ -30,5 +32,5 @@
   </table>
   {% else %}<p class="empty">Brak wpisów z hostname. Dodaj pierwszy wpis ingress.</p>{% endif %}
 </div>
-<p class="hint">Po zmianie konfiguracji użyj zakładki <a href="{{ url_for('service') }}">Usługa</a>, aby zrestartować cloudflared.</p>
+<p class="hint">Po zmianie konfiguracji cloudflared jest restartowany automatycznie. W zakładce <a href="{{ url_for('service') }}">Usługa</a> możesz sprawdzić status i dziennik.</p>
 {% endblock %}

@@ -3,8 +3,10 @@
 {% block content %}
 <div class="heading"><div><p class="eyebrow">Ingress</p><h1>{{ title }}</h1></div></div>
 <section class="card form-card">
+  {% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
   <form method="post" action="{{ action }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="revision" value="{{ revision }}">
     <label for="hostname">Hostname</label>
     <input id="hostname" name="hostname" value="{{ hostname }}" placeholder="app.example.com" required autofocus>
     <label for="service">Service target</label>
