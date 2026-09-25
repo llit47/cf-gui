@@ -15,3 +15,11 @@ Zrobione: odczyt i walidacja struktury, formularzowe operacje na wpisach hostnam
 Decyzja: przy zapisie PyYAML może zmienić formatowanie i komentarze YAML; pozostałe klucze i pola wpisów są zachowane. Wpis bez hostname jest traktowany jako fallback i nie podlega edycji formularzem.
 
 Dalej: komendy cloudflared, restart i logi.
+
+## Etap C — kontrola cloudflared
+
+Zrobione: osobny moduł dla `route dns`, restartu usługi, statusu i 20 ostatnich linii dziennika. Komendy uruchamiane bez powłoki, a po próbie restartu status i logi są pobierane również przy błędzie.
+
+Decyzja: błędy CLI są zwracane jako wynik z tekstem, aby interfejs mógł je pokazać użytkownikowi.
+
+Dalej: pojedynczy login admin i sesja cookie.
