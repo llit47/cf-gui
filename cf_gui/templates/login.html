@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}Logowanie · cf-gui{% endblock %}
+{% block content %}
+<section class="card narrow">
+  <p class="eyebrow">Panel administracyjny</p>
+  <h1>Zaloguj się</h1>
+  <form method="post" action="{{ url_for('login_post') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="password">Hasło administratora</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+    <button type="submit" class="button primary full">Zaloguj</button>
+  </form>
+</section>
+{% endblock %}

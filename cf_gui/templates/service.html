@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}Usługa · cf-gui{% endblock %}
+{% block content %}
+<div class="heading"><div><p class="eyebrow">cloudflared</p><h1>Usługa i dziennik</h1></div>
+<form method="post" action="{{ url_for('restart') }}" onsubmit="return confirm('Zrestartować cloudflared?')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button class="button primary" type="submit">Restart cloudflared</button>
+</form></div>
+{% if restart %}<section class="card"><h2>Wynik restartu</h2><p class="state {{ 'good' if restart.ok else 'bad' }}">{{ 'Sukces' if restart.ok else 'Błąd' }}</p><pre>{{ restart.output }}</pre></section>{% endif %}
+<section class="card"><h2>Status <span class="state {{ 'good' if status.ok else 'bad' }}">{{ 'aktywny' if status.ok else 'problem' }}</span></h2><pre>{{ status.output }}</pre></section>
+<section class="card"><h2>Ostatnie 20 linii journalctl</h2><pre>{{ logs.output }}</pre></section>
+{% endblock %}

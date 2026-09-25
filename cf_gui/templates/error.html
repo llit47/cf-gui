@@ -1,0 +1,3 @@
+{% extends 'base.html' %}
+{% block title %}Błąd · cf-gui{% endblock %}
+{% block content %}<section class="card"><h1>Nie można odczytać konfiguracji</h1><p>{{ message }}</p><a class="button" href="{{ url_for('index') }}">Spróbuj ponownie</a></section>{% endblock %}

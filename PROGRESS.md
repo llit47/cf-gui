@@ -39,3 +39,11 @@ Zrobione: trasy logowania, listy, dodawania, edycji, usuwania, DNS, statusu i re
 Decyzja: po dodaniu wpisu można od razu utworzyć DNS, ale wynik DNS jest komunikatem osobnym od zapisu YAML. Zmiana YAML nie restartuje automatycznie cloudflared; operator używa przycisku restartu.
 
 Dalej: szablony i prosty styl interfejsu.
+
+## Etap F — interfejs
+
+Zrobione: ekran logowania, tabela ingress, formularz dodawania/edycji, usuwanie, tworzenie DNS, status i dziennik usługi. CSS jest lokalny, responsywny, bez JavaScriptowego builda.
+
+Decyzja: usunięcie i restart proszą o proste potwierdzenie w przeglądarce; wszelkie wyjście komend jest widoczne jako tekst.
+
+Dalej: installer na Debian/Ubuntu.

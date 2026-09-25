@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} · cf-gui{% endblock %}
+{% block content %}
+<div class="heading"><div><p class="eyebrow">Ingress</p><h1>{{ title }}</h1></div></div>
+<section class="card form-card">
+  <form method="post" action="{{ action }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="hostname">Hostname</label>
+    <input id="hostname" name="hostname" value="{{ hostname }}" placeholder="app.example.com" required autofocus>
+    <label for="service">Service target</label>
+    <input id="service" name="service" value="{{ service }}" placeholder="http://localhost:3000" required>
+    {% if is_new %}
+    <label class="check"><input type="checkbox" name="create_dns" value="1"> Utwórz też rekord DNS przez cloudflared</label>
+    {% endif %}
+    <div class="form-actions"><button class="button primary" type="submit">Zapisz</button><a class="button" href="{{ url_for('index') }}">Anuluj</a></div>
+  </form>
+</section>
+{% endblock %}
