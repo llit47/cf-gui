@@ -57,7 +57,7 @@ def test_login_add_dns_and_restart(tmp_path):
          patch("cf_gui.web.cloudflared.route_dns", return_value=result(True, "created")) as route:
         response = client.post("/ingress", data={
             "csrf_token": field(form, "csrf_token"), "revision": field(form, "revision"),
-            "hostname": "new.example.com", "service": "http://localhost:8080", "create_dns": "1"
+            "hostname": "new.example.com", "service": "192.0.2.79:8080", "create_dns": "1"
         }, follow_redirects=True)
         assert response.status_code == 200
         assert b"new.example.com" in response.data
@@ -70,7 +70,9 @@ def test_login_add_dns_and_restart(tmp_path):
         response = client.post("/service/restart", data={"csrf_token": field(response, "csrf_token")})
         assert response.status_code == 200
         assert b"restarted" in response.data and b"last log" in response.data
-    assert ConfigStore(path).entries(ConfigStore(path).load())[1][1] == "new.example.com"
+    assert ConfigStore(path).entries(ConfigStore(path).load())[1] == (
+        1, "new.example.com", "http://192.0.2.79:8080"
+    )
     assert len(list(tmp_path.glob("config.yml.bak.*"))) == 1
 
 
@@ -100,11 +102,35 @@ def test_invalid_cloudflared_config_is_shown_without_activation(tmp_path):
          patch("cf_gui.cloudflared.restart_service") as restart:
         response = client.post("/ingress", data={
             "csrf_token": field(form, "csrf_token"), "revision": field(form, "revision"),
-            "hostname": "new.example.com", "service": "bad-service"
+            "hostname": "new.example.com", "service": "http://localhost:3001"
         })
     assert response.status_code == 400
     assert b"stdout info" in response.data and b"stderr invalid" in response.data
     assert path.read_text() == SOURCE
+    restart.assert_not_called()
+
+
+@pytest.mark.parametrize(("hostname", "service"), [
+    ("dupadupa", "origin:8096"),
+    ("foo.*.example.com", "origin:8096"),
+    ("game.example.com", "192.0.2.333:8000"),
+    ("game.example.com", "origin:8096/path"),
+    ("game.example.com", "http_status:099"),
+])
+def test_invalid_form_is_rejected_before_candidate_and_cloudflared(tmp_path, hostname, service):
+    path, client = client_for(tmp_path)
+    form = client.get("/ingress/new")
+    with patch("cf_gui.config.ConfigStore.candidate") as candidate, \
+         patch("cf_gui.cloudflared.validate_config") as validate, \
+         patch("cf_gui.cloudflared.restart_service") as restart:
+        response = client.post("/ingress", data={
+            "csrf_token": field(form, "csrf_token"), "revision": field(form, "revision"),
+            "hostname": hostname, "service": service,
+        })
+    assert response.status_code == 400
+    assert path.read_text() == SOURCE
+    candidate.assert_not_called()
+    validate.assert_not_called()
     restart.assert_not_called()
 
 

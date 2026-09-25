@@ -103,3 +103,16 @@ Weryfikacja: test bardzo długiego dziennika potwierdza obecność treści w bod
 Zrobione: odrzucony candidate ma osobny typ błędu z pełną diagnostyką; GUI pokazuje ją w body wraz z informacją, że aktywny config nie został zmieniony i nie było restartu. Błąd `route dns` pokazuje pełny output w body, a sukces używa krótkiego stałego komunikatu. Pozostałe błędy formularza są prezentowane bez `flash(str(exc))`. Nie zmieniono wykonania komend ani logiki aktywacji.
 
 Decyzja: ogólna zasada prezentacji to brak surowego outputu `cloudflared`, `systemctl` i `journalctl` w sesji cookie. Pełna diagnostyka trafia bezpośrednio do odpowiedzi HTTP. Testy obejmują długie wyniki walidacji i DNS oraz brak ich treści w sesji. Pełne `pytest -q`: 36 testów zaliczonych; `compileall`, `bash -n` i `git diff --check` przeszły. Nadal potrzebna jest weryfikacja na testowym LXC z prawdziwym `cloudflared`.
+
+
+## PR 2 — walidacja pól ingress
+
+Zrobione: formularz dodawania i edycji przyjmuje `hostname` tylko jako poprawną nazwę domenową z co najmniej dwiema etykietami, limitem 63 znaków na etykietę i 253 na całość. Origin bez schematu z poprawnym portem dostaje prefiks `http://`; jawne schematy i `http_status:404` zostają zachowane. Niepoprawne IPv4, port i nazwy hostów originu są odrzucane przed stworzeniem candidate. Walidacja CLI pozostaje kolejnym krokiem.
+
+Decyzja: pojedyncza etykieta jest dozwolona dla lokalnego hosta originu, ale nie dla publicznego `hostname` ingressu. Nie dodano zależności; parser URL i walidacja IP pochodzą z biblioteki standardowej Pythona.
+
+Weryfikacja: `pytest -q` — 68 testów zaliczonych; `compileall`, `bash -n` i `git diff --check` przeszły. Nadal należy sprawdzić całość z prawdziwym `cloudflared` na testowym LXC.
+
+Poprawka po review: `hostname` dopuszcza `*.` wyłącznie na początku, z dotychczasowymi limitami i walidacją domeny dla sufiksu. `service` zachowuje formy `unix:/...`, `unix+tls:/...` i `bastion`; `http_status` wymaga kodu 100–999. Adresy originu ze ścieżką, query lub fragmentem są odrzucane przed candidate. Dodano regresje dla dodawania i edycji; walidacja przez `cloudflared` pozostaje drugim krokiem. Pełne `pytest -q`: 96 testów zaliczonych; `compileall`, `bash -n` i `git diff --check` przeszły.
+
+Przykłady adresów infrastruktury w testach i dokumentacji zastąpiono domenami `example.com`, adresami z puli dokumentacyjnej `192.0.2.0/24` oraz neutralną nazwą lokalną `origin`.
