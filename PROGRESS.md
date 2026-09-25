@@ -23,3 +23,11 @@ Zrobione: osobny moduł dla `route dns`, restartu usługi, statusu i 20 ostatnic
 Decyzja: błędy CLI są zwracane jako wynik z tekstem, aby interfejs mógł je pokazać użytkownikowi.
 
 Dalej: pojedynczy login admin i sesja cookie.
+
+## Etap D — autentykacja
+
+Zrobione: jedno konto `admin`, weryfikacja hasła z hasha Werkzeug, sesja cookie Flask i pojedynczy token dla formularzy POST.
+
+Decyzja: hash hasła i losowy sekret sesji pochodzą z pliku środowiskowego tworzonego przez installer. Nie ma bazy użytkowników ani dodatkowych warstw autoryzacji.
+
+Dalej: routing HTTP łączący moduły.
