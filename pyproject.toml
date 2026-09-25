@@ -1,0 +1,12 @@
+[project]
+name = "cf-gui"
+version = "0.1.0"
+description = "Simple Cloudflare Tunnel ingress manager"
+requires-python = ">=3.10"
+dependencies = ["Flask>=3.0,<4", "PyYAML>=6.0,<7"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
