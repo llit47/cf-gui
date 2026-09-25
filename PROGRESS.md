@@ -116,3 +116,12 @@ Weryfikacja: `pytest -q` — 68 testów zaliczonych; `compileall`, `bash -n` i `
 Poprawka po review: `hostname` dopuszcza `*.` wyłącznie na początku, z walidacją domeny dla sufiksu i limitem 253 znaków dla całego hostname. `service` zachowuje formy `unix:/...`, `unix+tls:/...`, `bastion`, `socks-proxy`, `hello_world` i `hello-world`; `http_status` wymaga kodu 100–999. Adresy originu ze ścieżką, query lub fragmentem są odrzucane przed candidate. Dodano regresje dla dodawania i edycji, także dla pełnej długości wildcardu 253/254/255 znaków; walidacja przez `cloudflared` pozostaje drugim krokiem. Pełne `pytest -q`: 103 testy zaliczone; `compileall`, `bash -n` i `git diff --check` przeszły.
 
 Przykłady adresów infrastruktury w testach i dokumentacji zastąpiono domenami `example.com`, adresami z puli dokumentacyjnej `192.0.2.0/24` oraz neutralną nazwą lokalną `origin`.
+
+
+## PR 3 — uporządkowanie interfejsu
+
+Zrobione: krótkie komunikaty sukcesu i informacji zaczynają znikać po około 4 sekundach, a po animacji są usuwane z dokumentu. Błędy i ostrzeżenia pozostają widoczne. Tabela ingress ma niższe wiersze i przyciski akcji przy prawej krawędzi; nawigacja desktopowa jest wyśrodkowana niezależnie od szerokości marki i wylogowania. Kolory automatycznie dopasowują się do jasnego lub ciemnego motywu systemu.
+
+Decyzja: tylko szablony, CSS i krótki skrypt w szablonie bazowym; bez zależności frontendu i zmian w backendzie. Test HTML sprawdza, że wyłącznie sukces i informacja mają znacznik automatycznego zamykania.
+
+Weryfikacja: `pytest -q` — 104 testy zaliczone; `compileall`, `bash -n` i `git diff --check` przeszły.

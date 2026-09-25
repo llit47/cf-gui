@@ -10,21 +10,29 @@
   <header class="topbar">
     <a class="brand" href="{{ url_for('index') }}">cf-gui <span>●</span></a>
     {% if session.get('admin') %}
-    <nav>
+    <nav class="primary-nav" aria-label="Nawigacja główna">
       <a href="{{ url_for('index') }}">Ingress</a>
       <a href="{{ url_for('service') }}">Usługa</a>
-      <form method="post" action="{{ url_for('logout') }}" class="inline">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="link-button" type="submit">Wyloguj</button>
-      </form>
     </nav>
+    <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="link-button" type="submit">Wyloguj</button>
+    </form>
     {% endif %}
   </header>
   <main class="container">
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}<div class="notice {{ category }}" role="status">{{ message }}</div>{% endfor %}
+      {% for category, message in messages %}<div class="notice {{ category }}" role="{{ 'status' if category in ('success', 'info') else 'alert' }}"{% if category in ('success', 'info') %} data-auto-dismiss{% endif %}>{{ message }}</div>{% endfor %}
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  <script>
+    document.querySelectorAll('[data-auto-dismiss]').forEach((notice) => {
+      window.setTimeout(() => {
+        notice.classList.add('is-dismissing');
+        window.setTimeout(() => notice.remove(), 300);
+      }, 4000);
+    });
+  </script>
 </body>
 </html>
