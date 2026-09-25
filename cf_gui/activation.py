@@ -9,6 +9,14 @@ from .cloudflared import CommandResult
 from .config import ConfigError, ConfigStore, Snapshot, StaleConfigError, fingerprint
 
 
+class ValidationError(ConfigError):
+    """A candidate rejected by cloudflared, with diagnostics for the response body."""
+
+    def __init__(self, output: str):
+        self.output = output
+        super().__init__(f"Walidacja cloudflared nie powiodła się:\n{output}")
+
+
 @dataclass(frozen=True)
 class ServiceCheck:
     restart: CommandResult
@@ -77,7 +85,7 @@ class Activator:
             try:
                 validation = cloudflared.validate_config(candidate)
                 if not validation.ok:
-                    raise ConfigError(f"Walidacja cloudflared nie powiodła się:\n{validation.output}")
+                    raise ValidationError(validation.output)
                 # The external writer may not use our lock: check again at commit point.
                 metadata = self.store.assert_revision(expected_revision)
                 current = Snapshot(snapshot.document, snapshot.content, snapshot.revision, metadata)

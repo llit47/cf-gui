@@ -108,6 +108,91 @@ def test_invalid_cloudflared_config_is_shown_without_activation(tmp_path):
     restart.assert_not_called()
 
 
+@pytest.mark.parametrize("operation", ["add", "edit", "delete"])
+def test_long_validation_output_stays_in_body_and_out_of_session(tmp_path, operation):
+    path, client = client_for(tmp_path)
+    shown = client.get("/ingress/new" if operation == "add" else
+                       "/ingress/0/edit" if operation == "edit" else "/")
+    url = "/ingress" if operation == "add" else "/ingress/0" if operation == "edit" else "/ingress/0/delete"
+    data = {"csrf_token": field(shown, "csrf_token"), "revision": field(shown, "revision")}
+    if operation != "delete":
+        data.update(hostname="new.example.com", service="http://localhost:4000")
+    diagnostics = "VALIDATION-BEGIN:" + "".join(f"{value:05d}:invalid;" for value in range(1500)) + ":VALIDATION-END"
+    with patch("cf_gui.cloudflared.validate_config", return_value=result(False, diagnostics)), \
+         patch("cf_gui.cloudflared.restart_service") as restart, \
+         patch("cf_gui.web.flash") as flash:
+        response = client.post(url, data=data)
+    assert response.status_code == 400
+    assert diagnostics.encode() in response.data
+    assert "Candidate nie przeszedł walidacji".encode() in response.data
+    assert b"Aktywny config.yml nie zosta" in response.data
+    assert b"Cloudflared nie by" in response.data
+    assert path.read_text() == SOURCE
+    assert not list(tmp_path.glob("config.yml.bak.*"))
+    restart.assert_not_called()
+    flash.assert_not_called()
+    with client.session_transaction() as session:
+        assert "_flashes" not in session
+        assert "VALIDATION-BEGIN" not in str(dict(session))
+    assert all(len(header) < 4096 for header in response.headers.getlist("Set-Cookie"))
+
+
+def test_long_dns_error_stays_in_body_and_out_of_session(tmp_path):
+    path, client = client_for(tmp_path)
+    shown = client.get("/")
+    diagnostics = "DNS-BEGIN:" + "".join(f"{value:05d}:route-error;" for value in range(1500)) + ":DNS-END"
+    with patch("cf_gui.web.cloudflared.route_dns", return_value=result(False, diagnostics)) as route, \
+         patch("cf_gui.web.flash") as flash:
+        response = client.post("/ingress/0/route-dns", data={
+            "csrf_token": field(shown, "csrf_token"), "revision": field(shown, "revision")
+        })
+    assert response.status_code == 502
+    assert diagnostics.encode() in response.data
+    assert b"Utworzenie DNS nie powiod" in response.data
+    assert path.read_text() == SOURCE
+    route.assert_called_once_with("test-tunnel", "old.example.com")
+    flash.assert_not_called()
+    with client.session_transaction() as session:
+        assert "_flashes" not in session
+        assert "DNS-BEGIN" not in str(dict(session))
+    assert all(len(header) < 4096 for header in response.headers.getlist("Set-Cookie"))
+
+
+def test_successful_dns_flashes_only_controlled_message(tmp_path):
+    _, client = client_for(tmp_path)
+    shown = client.get("/")
+    output = "DNS-CLI-OUTPUT:" + "".join(f"{value:05d}:ok;" for value in range(1500))
+    with patch("cf_gui.web.cloudflared.route_dns", return_value=result(True, output)):
+        response = client.post("/ingress/0/route-dns", data={
+            "csrf_token": field(shown, "csrf_token"), "revision": field(shown, "revision")
+        })
+    assert response.status_code == 302
+    with client.session_transaction() as session:
+        assert session["_flashes"] == [("success", "Rekord DNS został utworzony.")]
+        assert "DNS-CLI-OUTPUT" not in str(dict(session))
+
+
+def test_dns_failure_after_add_shows_diagnostics_without_cookie_output(tmp_path):
+    path, client = client_for(tmp_path)
+    form = client.get("/ingress/new")
+    diagnostics = "DNS-AFTER-ADD:" + "".join(f"{value:05d}:failed;" for value in range(1500))
+    with patch("cf_gui.cloudflared.validate_config", return_value=result()), \
+         patch("cf_gui.cloudflared.restart_service", return_value=service_results()), \
+         patch("cf_gui.cloudflared.is_active", return_value=result(True, "active")), \
+         patch("cf_gui.web.cloudflared.route_dns", return_value=result(False, diagnostics)):
+        response = client.post("/ingress", data={
+            "csrf_token": field(form, "csrf_token"), "revision": field(form, "revision"),
+            "hostname": "new.example.com", "service": "http://localhost:4000", "create_dns": "1"
+        })
+    assert response.status_code == 502
+    assert diagnostics.encode() in response.data
+    assert b"Zmiana configu zosta" in response.data
+    assert "new.example.com" in path.read_text()
+    with client.session_transaction() as session:
+        assert "DNS-AFTER-ADD" not in str(dict(session))
+        assert "_flashes" not in session
+
+
 def test_rolled_back_response_contains_full_diagnostics(tmp_path):
     path, client = client_for(tmp_path)
     form = client.get("/ingress/0/edit")

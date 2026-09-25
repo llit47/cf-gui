@@ -7,7 +7,7 @@ import os
 from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
 
 from . import cloudflared
-from .activation import Activator, ActivationResult
+from .activation import Activator, ActivationResult, ValidationError
 from .auth import csrf_token, login_required, password_matches, require_csrf
 from .config import ConfigError, ConfigStore, StaleConfigError
 
@@ -45,6 +45,17 @@ def create_app(*, config_path: str | None = None, password_hash: str | None = No
             return None
         status = 409 if result.state == "rolled_back" else 500
         return render_template("activation_result.html", result=result), status
+
+    def config_failure(error: ConfigError, *, form: str | None = None, **context):
+        if isinstance(error, ValidationError):
+            return render_template(
+                "error.html", title="Candidate nie przeszedł walidacji cloudflared",
+                message="Aktywny config.yml nie został zmieniony. Cloudflared nie był restartowany.",
+                details=error.output,
+            ), 400
+        if form:
+            return render_template(form, error=str(error), **context), 400
+        return render_template("error.html", title="Błąd konfiguracji", message=str(error)), 400
 
     @app.get("/login")
     def login():
@@ -91,15 +102,16 @@ def create_app(*, config_path: str | None = None, password_hash: str | None = No
         except StaleConfigError:
             raise
         except ConfigError as exc:
-            flash(str(exc), "error")
-            return render_template("entry_form.html", title="Dodaj wpis", action=url_for("add_entry"),
-                                   hostname=hostname, service=request.form.get("service", ""),
-                                   is_new=True, revision=revision), 400
+            return config_failure(exc, form="entry_form.html", title="Dodaj wpis", action=url_for("add_entry"),
+                                  hostname=hostname, service=request.form.get("service", ""),
+                                  is_new=True, revision=revision)
         failure_response = activation_response(result)
         if failure_response is not None:
             return failure_response
         if request.form.get("create_dns"):
-            _route_dns(store.load(), hostname)
+            dns_response = _route_dns(store.load(), hostname, after_activation=True)
+            if dns_response is not None:
+                return dns_response
         return redirect(url_for("index"))
 
     @app.get("/ingress/<int:index>/edit")
@@ -125,9 +137,9 @@ def create_app(*, config_path: str | None = None, password_hash: str | None = No
         except StaleConfigError:
             raise
         except ConfigError as exc:
-            flash(str(exc), "error")
-            return render_template("entry_form.html", title="Edytuj wpis", action=url_for("update_entry", index=index),
-                                   hostname=hostname, service=service, is_new=False, revision=revision), 400
+            return config_failure(exc, form="entry_form.html", title="Edytuj wpis",
+                                  action=url_for("update_entry", index=index), hostname=hostname,
+                                  service=service, is_new=False, revision=revision)
         failure_response = activation_response(result)
         if failure_response is not None:
             return failure_response
@@ -141,20 +153,25 @@ def create_app(*, config_path: str | None = None, password_hash: str | None = No
         except StaleConfigError:
             raise
         except ConfigError as exc:
-            flash(str(exc), "error")
-            return redirect(url_for("index"))
+            return config_failure(exc)
         failure_response = activation_response(result)
         if failure_response is not None:
             return failure_response
         return redirect(url_for("index"))
 
-    def _route_dns(document: dict, hostname: str) -> None:
+    def _route_dns(document: dict, hostname: str, *, after_activation: bool = False):
         tunnel = document.get("tunnel")
         if not isinstance(tunnel, str) or not tunnel.strip():
             flash("Brak nazwy/ID tunelu w config.yml; nie utworzono DNS.", "error")
             return
         result = cloudflared.route_dns(tunnel, hostname)
-        flash(f"DNS: {result.output}", "success" if result.ok else "error")
+        if result.ok:
+            flash("Rekord DNS został utworzony.", "success")
+            return
+        message = ("Zmiana configu została aktywowana, ale utworzenie DNS nie powiodło się."
+                   if after_activation else "Utworzenie DNS nie powiodło się. Config nie został zmieniony.")
+        return render_template("error.html", title="Błąd tworzenia DNS", message=message,
+                               details=result.output), 502
 
     @app.post("/ingress/<int:index>/route-dns")
     @login_required
@@ -166,7 +183,9 @@ def create_app(*, config_path: str | None = None, password_hash: str | None = No
                 hostname = store._entry(snapshot.document, index)["hostname"]
             except ConfigError:
                 abort(404)
-            _route_dns(snapshot.document, hostname)
+            dns_response = _route_dns(snapshot.document, hostname)
+            if dns_response is not None:
+                return dns_response
         return redirect(url_for("index"))
 
     @app.get("/service")

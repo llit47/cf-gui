@@ -96,3 +96,10 @@ Weryfikacja: rozszerzone testy obejmują walidację, backup, rollback obu wynik�
 Zrobione: po sukcesie aktywacji pozostaje krótki flash i redirect. Wynik `rolled_back` jest renderowany bezpośrednio w HTTP 409, a `rollback_failed` w HTTP 500. Strona pokazuje oba restarty, statusy systemd, `is-active`, logi oraz wynik przywracania pliku, jeśli dany krok wystąpił. Żadna diagnostyka aktywacji/rollbacku nie jest zapisywana w sesji Flask.
 
 Weryfikacja: test bardzo długiego dziennika potwierdza obecność treści w body i brak wywołania `flash()`, brak `_flashes` w sesji oraz brak dużego nagłówka cookie; testy sprawdzają komplet informacji dla obu stanów błędu. Pełne `pytest -q`: 30 testów zaliczonych. `compileall`, `bash -n` i `git diff --check` przeszły. Logika candidate, walidacji, revision, locka i rollbacku nie została zmieniona.
+
+
+## PR 1 — poprawka po Codex Review: output CLI poza sesją
+
+Zrobione: odrzucony candidate ma osobny typ błędu z pełną diagnostyką; GUI pokazuje ją w body wraz z informacją, że aktywny config nie został zmieniony i nie było restartu. Błąd `route dns` pokazuje pełny output w body, a sukces używa krótkiego stałego komunikatu. Pozostałe błędy formularza są prezentowane bez `flash(str(exc))`. Nie zmieniono wykonania komend ani logiki aktywacji.
+
+Decyzja: ogólna zasada prezentacji to brak surowego outputu `cloudflared`, `systemctl` i `journalctl` w sesji cookie. Pełna diagnostyka trafia bezpośrednio do odpowiedzi HTTP. Testy obejmują długie wyniki walidacji i DNS oraz brak ich treści w sesji. Pełne `pytest -q`: 36 testów zaliczonych; `compileall`, `bash -n` i `git diff --check` przeszły. Nadal potrzebna jest weryfikacja na testowym LXC z prawdziwym `cloudflared`.
