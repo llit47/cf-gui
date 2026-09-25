@@ -6,8 +6,9 @@ Prosty panel do zarządzania wpisami `ingress` lokalnego tunelu Cloudflare. Prze
 
 Python 3, Flask i PyYAML. Flask renderuje HTML na serwerze, więc nie ma Node.js ani budowania frontendu. Zależności runtime są dwie, a kod jest rozdzielony według zadań:
 
-- `cf_gui/config.py` — YAML, wpisy ingress, walidacja i backup;
-- `cf_gui/cloudflared.py` — `route dns`, restart, status i dziennik;
+- `cf_gui/config.py` — YAML, revision, pliki candidate, backup, metadata i lock;
+- `cf_gui/activation.py` — walidacja, aktywacja i rollback;
+- `cf_gui/cloudflared.py` — walidacja przez CLI, `route dns`, restart, status i dziennik;
 - `cf_gui/auth.py` — pojedynczy login admin i sesja cookie;
 - `cf_gui/web.py` — formularze i routing HTTP;
 - `cf_gui/__main__.py` — serwer i wybór portu;
@@ -39,11 +40,17 @@ Usługa działa jako root, ponieważ zapisuje systemowy config cloudflared i wyk
 
 1. Zaloguj się hasłem wypisanym przez instalator.
 2. Lista pokazuje wpisy `ingress` z `hostname` i ich `service`. Wpis fallback bez `hostname` pozostaje w configu i nie jest edytowany formularzem.
-3. Dodaj, edytuj lub usuń wpis. Każdy zapis tworzy kopię poprzedniego pliku obok configu: `config.yml.bak.YYYYMMDDTHHMMSSffffffZ`. Następnie aplikacja waliduje wygenerowany YAML i atomowo podmienia plik.
-4. Przy dodawaniu można zaznaczyć tworzenie DNS, co wywołuje `cloudflared tunnel route dns <tunnel> <hostname>`. Przycisk „Utwórz DNS” przy wpisie umożliwia ponowienie tej akcji. Pole `tunnel` musi być obecne w YAML. Wynik komendy jest pokazany w panelu.
-5. W zakładce „Usługa” zrestartuj `cloudflared` po zmianach. Panel pokaże wynik restartu, status systemd i ostatnie 20 linii `journalctl`.
+3. Dodaj, edytuj lub usuń wpis. Aplikacja waliduje zmianę, tworzy backup, aktywuje config i automatycznie restartuje cloudflared. Panel pokazuje jeden z trzech wyników: sukces, nieudana aktywacja z udanym rollbackiem albo nieudana aktywacja z nieudanym rollbackiem.
+4. Przy dodawaniu można zaznaczyć tworzenie DNS, co wywołuje `cloudflared tunnel route dns <tunnel> <hostname>` tylko po udanej aktywacji. Przycisk „Utwórz DNS” przy wpisie umożliwia ponowienie tej akcji. Pole `tunnel` musi być obecne w YAML. Wynik komendy jest pokazany w panelu.
+5. W zakładce „Usługa” sprawdź status systemd i ostatnie 20 linii `journalctl`. Przycisk ręcznego restartu pozostaje dostępny.
 
-PyYAML może zmienić formatowanie i usunąć komentarze z pliku YAML podczas zapisu; pozostałe klucze oraz pola wpisów są zachowywane. Kopia sprzed zapisu pozwala wrócić do oryginału. Formularz sprawdza składnię YAML i podstawową strukturę `ingress`; wynik działania usługi widać po restarcie.
+### Bezpieczna aktywacja configu
+
+Dla każdej mutacji `ingress` aplikacja trzyma advisory lock w pliku obok configu przez cały odcinek `read → revision check → candidate → validate → backup → atomic replace → restart/status → ewentualny rollback`. Lock serializuje zapisy dwóch procesów `cf-gui` oraz ręczny restart z panelu. Każdy formularz wysyła SHA-256 z **dokładnych bajtów pliku**, które były widoczne przy jego wyświetleniu. Po wejściu pod lock i ponownie tuż przed podmianą aplikacja sprawdza revision; konflikt odrzuca mutację i wymaga odświeżenia strony.
+
+Candidate powstaje w prywatnym pliku tymczasowym w katalogu configu. Przed dotknięciem aktywnego pliku aplikacja sprawdza YAML i strukturę `ingress`, a następnie wykonuje `cloudflared tunnel --config <candidate> ingress validate`. Nieudana walidacja pozostawia aktywny config bez zmian, nie restartuje usługi i pokazuje diagnostykę CLI. Po udanej walidacji tworzy backup `config.yml.bak.YYYYMMDDTHHMMSSffffffZ`, atomowo podmienia config i restartuje cloudflared. Sukces wymaga udanego `systemctl restart`, poprawnego `systemctl status` i stanu `systemctl is-active`. Jeśli którykolwiek krok zawiedzie, aplikacja odtwarza poprzednie bajty z backupu, ponawia restart i ponownie sprawdza stan. Backup pozostaje na dysku. Przy podmianie zachowuje mode, uid i gid poprzedniego pliku; nowy plik bez poprzednika miałby mode `0600`.
+
+Lock nie jest współdzielony z `cloudflared-manager`. Revision wykrywa zmianę wykonaną przez zewnętrzny writer **przed końcowym sprawdzeniem tuż przed podmianą**; nie eliminuje wyścigu między tym sprawdzeniem a samym `os.replace` ani zmian po aktywacji. Gdy config zmieni się po naszej podmianie, przed rollbackiem aplikacja nie nadpisuje tej nowszej wersji i zgłasza nieudany rollback. Walidacja ingress oraz stan `active` nie dowodzą poprawności ruchu przez tunel — to nadal należy sprawdzić na testowym LXC. PyYAML może zmienić formatowanie i usunąć komentarze z pliku YAML; pozostałe klucze oraz pola wpisów są zachowywane.
 
 ## Aktualizacja
 

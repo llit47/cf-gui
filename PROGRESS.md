@@ -80,3 +80,12 @@ Zrobione: utworzono osobne `.venv` projektu, zainstalowano zależności i dodano
 Decyzja: systemowy Python w tym kontenerze nie ma `ensurepip`, więc własne `.venv` utworzono opcją `--without-pip`, a pip doinstalowano przez istniejące narzędzie; środowisko testowe pozostaje odrębne od sąsiedniego projektu.
 
 Dalej: wypchnąć repo do GitHub i przetestować installer oraz integrację z prawdziwym cloudflared na testowym LXC.
+
+
+## PR 1 — bezpieczna aktywacja configu (branch `pr1-safe-config-activation`)
+
+Zrobione: candidate YAML jest walidowany przez `cloudflared tunnel --config <candidate> ingress validate` przed backupem i podmianą. Po atomowej aktywacji aplikacja restartuje usługę, sprawdza `is-active` i w razie niepowodzenia przywraca backup oraz ponawia restart. GUI rozróżnia sukces, udany rollback i nieudany rollback, pokazując diagnostykę. Mode, uid i gid istniejącego configu są zachowywane. SHA-256 dokładnej zawartości pliku jest wysyłany w formularzach i sprawdzany pod advisory lock przed zapisem. Lock obejmuje całą aktywację i serializuje mutacje procesów `cf-gui`.
+
+Decyzja: `cloudflared-manager` nie używa naszego locka; przed końcowym sprawdzeniem revision jego zmiany są wykrywane, lecz pozostaje krótki wyścig z writerem zewnętrznym między sprawdzeniem a atomową podmianą. Po wykryciu późniejszej obcej zmiany rollback nie nadpisuje jej. Zachowano PyYAML, root service, bind i model jednego administratora.
+
+Weryfikacja: rozszerzone testy obejmują walidację, backup, rollback obu wyników, stale revision, błędny indeks, metadata i blokadę równoległych mutacji. `pytest -q`: 28 testów zaliczonych. `compileall`, `bash -n` i `git diff --check` przeszły. Nadal potrzebny test z prawdziwym cloudflared/systemd na testowym LXC.
