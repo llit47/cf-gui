@@ -113,6 +113,6 @@ Decyzja: pojedyncza etykieta jest dozwolona dla lokalnego hosta originu, ale nie
 
 Weryfikacja: `pytest -q` — 68 testów zaliczonych; `compileall`, `bash -n` i `git diff --check` przeszły. Nadal należy sprawdzić całość z prawdziwym `cloudflared` na testowym LXC.
 
-Poprawka po review: `hostname` dopuszcza `*.` wyłącznie na początku, z dotychczasowymi limitami i walidacją domeny dla sufiksu. `service` zachowuje formy `unix:/...`, `unix+tls:/...` i `bastion`; `http_status` wymaga kodu 100–999. Adresy originu ze ścieżką, query lub fragmentem są odrzucane przed candidate. Dodano regresje dla dodawania i edycji; walidacja przez `cloudflared` pozostaje drugim krokiem. Pełne `pytest -q`: 96 testów zaliczonych; `compileall`, `bash -n` i `git diff --check` przeszły.
+Poprawka po review: `hostname` dopuszcza `*.` wyłącznie na początku, z walidacją domeny dla sufiksu i limitem 253 znaków dla całego hostname. `service` zachowuje formy `unix:/...`, `unix+tls:/...`, `bastion`, `socks-proxy`, `hello_world` i `hello-world`; `http_status` wymaga kodu 100–999. Adresy originu ze ścieżką, query lub fragmentem są odrzucane przed candidate. Dodano regresje dla dodawania i edycji, także dla pełnej długości wildcardu 253/254/255 znaków; walidacja przez `cloudflared` pozostaje drugim krokiem. Pełne `pytest -q`: 103 testy zaliczone; `compileall`, `bash -n` i `git diff --check` przeszły.
 
 Przykłady adresów infrastruktury w testach i dokumentacji zastąpiono domenami `example.com`, adresami z puli dokumentacyjnej `192.0.2.0/24` oraz neutralną nazwą lokalną `origin`.

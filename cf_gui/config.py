@@ -43,7 +43,7 @@ def _valid_dns_name(name: str, *, fqdn: bool) -> bool:
 def _form_hostname(value: str) -> str:
     hostname = value.strip()
     suffix = hostname[2:] if hostname.startswith("*.") else hostname
-    if not _valid_dns_name(suffix, fqdn=True):
+    if len(hostname) > 253 or not _valid_dns_name(suffix, fqdn=True):
         raise ConfigError("Hostname musi być poprawną nazwą domenową (np. app.example.com).")
     return hostname
 
@@ -66,7 +66,8 @@ def _valid_origin_host(host: str) -> bool:
 
 def _form_service(value: str) -> str:
     service = value.strip()
-    if service in ("hello_world", "bastion") or re.fullmatch(r"http_status:[1-9][0-9]{2}", service):
+    if (service in ("hello_world", "hello-world", "bastion", "socks-proxy")
+            or re.fullmatch(r"http_status:[1-9][0-9]{2}", service)):
         return service
     if not service or any(char.isspace() for char in service):
         raise ConfigError("Service musi być poprawnym adresem originu lub usługą cloudflared.")

@@ -89,7 +89,9 @@ def test_form_rejects_invalid_hostname(tmp_path: Path, hostname: str):
     ("unix:/path/to/socket", "unix:/path/to/socket"),
     ("unix+tls:/path/to/socket", "unix+tls:/path/to/socket"),
     ("bastion", "bastion"),
+    ("socks-proxy", "socks-proxy"),
     ("hello_world", "hello_world"),
+    ("hello-world", "hello-world"),
     ("http_status:404", "http_status:404"),
     ("http_status:100", "http_status:100"),
     ("http_status:999", "http_status:999"),
@@ -129,6 +131,16 @@ def test_form_edit_uses_same_validation_and_normalization(tmp_path: Path):
     assert document["ingress"][0] == {"hostname": "*.example.com", "service": "unix+tls:/path/to/socket"}
 
 
+@pytest.mark.parametrize("service", ["socks-proxy", "hello-world", "hello_world"])
+def test_special_service_is_preserved_for_add_and_edit(service):
+    document = {"ingress": [{"service": "http_status:404"}]}
+    ConfigStore.add(document, "app.example.com", service)
+    assert document["ingress"][0]["service"] == service
+    document["ingress"][0]["service"] = "http://origin:8096"
+    ConfigStore.edit(document, 0, "app.example.com", service)
+    assert document["ingress"][0]["service"] == service
+
+
 def test_form_accepts_253_character_domain_name():
     hostname = ".".join(["a" * 63] * 3 + ["b" * 61])
     assert len(hostname) == 253
@@ -137,11 +149,28 @@ def test_form_accepts_253_character_domain_name():
     assert document["ingress"][0]["hostname"] == hostname
 
 
-@pytest.mark.parametrize("suffix", ["example.com", ".".join(["a" * 63] * 3 + ["b" * 61])])
-def test_form_accepts_wildcard_with_valid_domain_suffix(suffix):
+def test_form_accepts_wildcard_with_valid_domain_suffix():
     document = {"ingress": [{"service": "http_status:404"}]}
-    ConfigStore.add(document, f"*.{suffix}", "origin:8096")
-    assert document["ingress"][0]["hostname"] == f"*.{suffix}"
+    ConfigStore.add(document, "*.example.com", "origin:8096")
+    assert document["ingress"][0]["hostname"] == "*.example.com"
+
+
+def test_form_accepts_wildcard_at_253_character_total_limit():
+    hostname = "*." + ".".join(["a" * 63] * 3 + ["b" * 59])
+    assert len(hostname) == 253
+    document = {"ingress": [{"service": "http_status:404"}]}
+    ConfigStore.add(document, hostname, "origin:8096")
+    assert document["ingress"][0]["hostname"] == hostname
+
+
+@pytest.mark.parametrize(("last_label_length", "total_length"), [(60, 254), (61, 255)])
+def test_form_rejects_wildcard_over_253_character_total_limit(last_label_length, total_length):
+    hostname = "*." + ".".join(["a" * 63] * 3 + ["b" * last_label_length])
+    assert len(hostname) == total_length
+    document = {"ingress": [{"service": "http_status:404"}]}
+    with pytest.raises(ConfigError, match="Hostname"):
+        ConfigStore.add(document, hostname, "origin:8096")
+    assert len(document["ingress"]) == 1
 
 
 def test_replace_preserves_mode_owner_and_group(tmp_path: Path):
