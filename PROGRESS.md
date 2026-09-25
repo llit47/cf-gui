@@ -68,6 +68,15 @@ Dalej: finalna dokumentacja oraz weryfikacja.
 
 Zrobione: pełne README z instalacją, obsługą, aktualizacją, ograniczeniami YAML i testowym LXC. Dodano metadane pakowania, aby szablony i CSS trafiły do instalowanego pakietu. Installer wypisuje hasło przed startem usługi.
 
-Weryfikacja: `compileall` i `bash -n` przeszły. Testy pytest nie mogły tu ruszyć: w środowisku roboczym brakuje `pytest`, `Flask`, `PyYAML` i pakietu systemowego `python3-venv`. Uruchomić `pytest -q` na testowym LXC po instalacji zależności.
+Weryfikacja: `compileall` i `bash -n` przeszły. Pełne testy uruchomiono w późniejszym etapie J.
 
 Dalej: test instalacji i działania na testowym LXC, potem wdrożenie produkcyjne.
+
+
+## Etap J — uruchomienie testów
+
+Zrobione: utworzono osobne `.venv` projektu, zainstalowano zależności i dodano test HTTP obejmujący logowanie, formularz dodania, DNS oraz restart. `pytest -q`: 6 testów zaliczonych. Zbudowano wheel i sprawdzono obecność szablonów oraz CSS. Lokalny test z zajętym portem potwierdził przejście na kolejny port.
+
+Decyzja: systemowy Python w tym kontenerze nie ma `ensurepip`, więc własne `.venv` utworzono opcją `--without-pip`, a pip doinstalowano przez istniejące narzędzie; środowisko testowe pozostaje odrębne od sąsiedniego projektu.
+
+Dalej: wypchnąć repo do GitHub i przetestować installer oraz integrację z prawdziwym cloudflared na testowym LXC.
