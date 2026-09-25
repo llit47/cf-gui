@@ -2,6 +2,8 @@
 set -euo pipefail
 
 APP_DIR=/opt/cf-gui
+STATE_DIR=/var/lib/cf-gui
+INSTALLED_COMMIT_FILE=$STATE_DIR/installed-commit
 echo 'cf-gui updater'
 
 if [[ $EUID -ne 0 ]]; then
@@ -44,15 +46,19 @@ NEW_COMMIT=$(git -C "$APP_DIR" rev-parse refs/remotes/origin/main)
 echo 'Sprawdzanie aktualizacji... OK'
 
 if [[ $OLD_COMMIT == "$NEW_COMMIT" ]]; then
-  echo 'cf-gui jest już aktualne.'
-  exit 0
+  INSTALLED_COMMIT=$(cat "$INSTALLED_COMMIT_FILE" 2>/dev/null || true)
+  if [[ $INSTALLED_COMMIT == "$NEW_COMMIT" ]]; then
+    echo 'cf-gui jest już aktualne.'
+    exit 0
+  fi
+else
+  if ! git -C "$APP_DIR" merge-base --is-ancestor "$OLD_COMMIT" "$NEW_COMMIT"; then
+    echo 'Lokalny main nie może zostać zaktualizowany fast-forward do origin/main.' >&2
+    exit 1
+  fi
+  run_quiet 'Aktualizacja' git -C "$APP_DIR" merge --ff-only origin/main
+  printf 'Aktualizacja: %s -> %s\n' "${OLD_COMMIT:0:7}" "${NEW_COMMIT:0:7}"
 fi
-if ! git -C "$APP_DIR" merge-base --is-ancestor "$OLD_COMMIT" "$NEW_COMMIT"; then
-  echo 'Lokalny main nie może zostać zaktualizowany fast-forward do origin/main.' >&2
-  exit 1
-fi
-run_quiet 'Aktualizacja' git -C "$APP_DIR" merge --ff-only origin/main
-printf 'Aktualizacja: %s -> %s\n' "${OLD_COMMIT:0:7}" "${NEW_COMMIT:0:7}"
 
 run_quiet 'Instalacja' "$APP_DIR/.venv/bin/pip" install --no-cache-dir --upgrade "$APP_DIR"
 echo 'Instalacja... OK'
@@ -75,5 +81,10 @@ if ! ACTIVE_OUTPUT=$(systemctl is-active cf-gui.service 2>&1); then
   exit 1
 fi
 echo 'Restart usługi... OK'
+mkdir -p "$STATE_DIR"
+MARKER_TMP=$(mktemp "$STATE_DIR/.installed-commit.XXXXXX")
+trap 'rm -f "$MARKER_TMP"' EXIT
+printf '%s\n' "$NEW_COMMIT" > "$MARKER_TMP"
+mv -f "$MARKER_TMP" "$INSTALLED_COMMIT_FILE"
 PORT_LINE=$(journalctl -u cf-gui.service -n 30 -o cat --no-pager 2>/dev/null | grep 'cf-gui listening on ' | tail -n 1 || true)
 echo "Gotowe. ${PORT_LINE:-Port sprawdź poleceniem: journalctl -u cf-gui -n 30 --no-pager}"
