@@ -55,3 +55,11 @@ Zrobione: `scripts/install.sh` instaluje pakiety, klonuje repo do `/opt/cf-gui`,
 Decyzja: usługa działa jako root, ponieważ w tym pojedynczym LXC musi zapisać `/etc/cloudflared/config.yml` i restartować systemową usługę cloudflared. Nazwy i ścieżki są odrębne od cloudflared-manager.
 
 Dalej: skrypt aktualizujący.
+
+## Etap H — updater
+
+Zrobione: `scripts/update.sh`, uruchamiany unikalną komendą `cf-gui-update`, pobiera `main` przez fast-forward, aktualizuje zależności i restartuje wyłącznie `cf-gui.service`. Lokalnie zmodyfikowany kod blokuje aktualizację zamiast zostać nadpisany.
+
+Decyzja: config YAML, hasło i sekret leżą poza repo `/opt/cf-gui`, więc aktualizacja ich nie dotyka. Skrypt nie używa nazw ani ścieżek cloudflared-manager.
+
+Dalej: finalna dokumentacja oraz weryfikacja.
