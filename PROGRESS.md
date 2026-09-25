@@ -47,3 +47,11 @@ Zrobione: ekran logowania, tabela ingress, formularz dodawania/edycji, usuwanie,
 Decyzja: usunięcie i restart proszą o proste potwierdzenie w przeglądarce; wszelkie wyjście komend jest widoczne jako tekst.
 
 Dalej: installer na Debian/Ubuntu.
+
+## Etap G — installer
+
+Zrobione: `scripts/install.sh` instaluje pakiety, klonuje repo do `/opt/cf-gui`, tworzy venv, losowe hasło admina i sekret sesji, plik `/etc/cf-gui.env`, usługę `cf-gui.service` i komendę `cf-gui-update`. Po starcie wypisuje hasło i port z dziennika.
+
+Decyzja: usługa działa jako root, ponieważ w tym pojedynczym LXC musi zapisać `/etc/cloudflared/config.yml` i restartować systemową usługę cloudflared. Nazwy i ścieżki są odrębne od cloudflared-manager.
+
+Dalej: skrypt aktualizujący.
