@@ -31,3 +31,11 @@ Zrobione: jedno konto `admin`, weryfikacja hasła z hasha Werkzeug, sesja cookie
 Decyzja: hash hasła i losowy sekret sesji pochodzą z pliku środowiskowego tworzonego przez installer. Nie ma bazy użytkowników ani dodatkowych warstw autoryzacji.
 
 Dalej: routing HTTP łączący moduły.
+
+## Etap E — routing HTTP
+
+Zrobione: trasy logowania, listy, dodawania, edycji, usuwania, DNS, statusu i restartu; uruchamianie WSGI na pierwszym wolnym porcie od 8000 i wypisanie wybranego portu do dziennika usługi.
+
+Decyzja: po dodaniu wpisu można od razu utworzyć DNS, ale wynik DNS jest komunikatem osobnym od zapisu YAML. Zmiana YAML nie restartuje automatycznie cloudflared; operator używa przycisku restartu.
+
+Dalej: szablony i prosty styl interfejsu.
