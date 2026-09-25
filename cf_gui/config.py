@@ -7,10 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import fcntl
 import hashlib
+import ipaddress
 import os
 from pathlib import Path
+import re
 import stat
 import tempfile
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -21,6 +24,74 @@ class ConfigError(Exception):
 
 class StaleConfigError(ConfigError):
     """The config changed after the form was displayed."""
+
+
+_DNS_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
+_URL_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
+_IPV4_SHAPE = re.compile(r"[0-9]+(?:\.[0-9]+){3}\Z")
+
+
+def _valid_dns_name(name: str, *, fqdn: bool) -> bool:
+    labels = name.split(".")
+    if len(name) > 253 or (fqdn and len(labels) < 2):
+        return False
+    if len(labels) > 1 and (len(labels[-1]) < 2 or not any(char.isalpha() for char in labels[-1])):
+        return False
+    return all(_DNS_LABEL.fullmatch(label) for label in labels)
+
+
+def _form_hostname(value: str) -> str:
+    hostname = value.strip()
+    suffix = hostname[2:] if hostname.startswith("*.") else hostname
+    if len(hostname) > 253 or not _valid_dns_name(suffix, fqdn=True):
+        raise ConfigError("Hostname musi być poprawną nazwą domenową (np. app.example.com).")
+    return hostname
+
+
+def _valid_origin_host(host: str) -> bool:
+    if ":" in host:
+        try:
+            ipaddress.IPv6Address(host)
+            return True
+        except ValueError:
+            return False
+    if _IPV4_SHAPE.fullmatch(host):
+        try:
+            ipaddress.IPv4Address(host)
+            return True
+        except ValueError:
+            return False
+    return _valid_dns_name(host, fqdn=False)
+
+
+def _form_service(value: str) -> str:
+    service = value.strip()
+    if (service in ("hello_world", "hello-world", "bastion", "socks-proxy")
+            or re.fullmatch(r"http_status:[1-9][0-9]{2}", service)):
+        return service
+    if not service or any(char.isspace() for char in service):
+        raise ConfigError("Service musi być poprawnym adresem originu lub usługą cloudflared.")
+    if service.startswith(("unix:", "unix+tls:")):
+        socket_path = service.split(":", 1)[1]
+        if (not socket_path.startswith("/") or socket_path.startswith("//") or socket_path == "/"
+                or "?" in socket_path or "#" in socket_path):
+            raise ConfigError("Service unix wymaga bezwzględnej ścieżki do socketu.")
+        return service
+    explicit_scheme = bool(_URL_SCHEME.match(service))
+    address = service if explicit_scheme else f"http://{service}"
+    try:
+        parsed = urlsplit(address)
+        host, port = parsed.hostname, parsed.port
+    except ValueError as exc:
+        raise ConfigError("Service ma nieprawidłowy host lub port.") from exc
+    if parsed.path or "?" in address or "#" in address:
+        raise ConfigError("Service originu nie może zawierać ścieżki, query ani fragmentu.")
+    if (not host or not _valid_origin_host(host) or (port is not None and port < 1)
+            or parsed.netloc.rsplit("@", 1)[-1].endswith(":")):
+        raise ConfigError("Service ma nieprawidłowy host lub port.")
+    if not explicit_scheme and port is None:
+        raise ConfigError("Service bez schematu wymaga portu (np. origin:8096).")
+    return service if explicit_scheme else address
 
 
 @dataclass(frozen=True)
@@ -181,9 +252,7 @@ class ConfigStore:
 
     @staticmethod
     def add(document: dict, hostname: str, service: str) -> None:
-        hostname, service = hostname.strip(), service.strip()
-        if not hostname or not service:
-            raise ConfigError("Hostname i service są wymagane.")
+        hostname, service = _form_hostname(hostname), _form_service(service)
         if any(item.get("hostname") == hostname for item in document["ingress"]):
             raise ConfigError("Taki hostname już istnieje.")
         ingress = document["ingress"]
@@ -193,9 +262,7 @@ class ConfigStore:
     @staticmethod
     def edit(document: dict, index: int, hostname: str, service: str) -> None:
         item = ConfigStore._entry(document, index)
-        hostname, service = hostname.strip(), service.strip()
-        if not hostname or not service:
-            raise ConfigError("Hostname i service są wymagane.")
+        hostname, service = _form_hostname(hostname), _form_service(service)
         if any(i != index and entry.get("hostname") == hostname for i, entry in enumerate(document["ingress"])):
             raise ConfigError("Taki hostname już istnieje.")
         item["hostname"] = hostname

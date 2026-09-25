@@ -63,6 +63,116 @@ def test_duplicate_and_fallback_are_protected(tmp_path: Path):
         ConfigStore.delete(document, 1)
 
 
+@pytest.mark.parametrize("hostname", [
+    "dupadupa", "bad host.example.com", "https://app.example.com", "app.example.com/path",
+    "app.example.com:443", "-app.example.com", "app-.example.com", "app..example.com",
+    "192.0.2.79", "a" * 64 + ".example.com", ".".join(["a" * 63] * 3 + ["b" * 62]),
+    "foo.*.example.com", "*.*.example.com", "*", "*.dupadupa", "*." + "a" * 64 + ".example.com",
+    "*." + ".".join(["a" * 63] * 3 + ["b" * 62]),
+])
+def test_form_rejects_invalid_hostname(tmp_path: Path, hostname: str):
+    document = {"ingress": [{"service": "http_status:404"}]}
+    with pytest.raises(ConfigError, match="Hostname"):
+        ConfigStore.add(document, hostname, "http://origin:8096")
+    assert len(document["ingress"]) == 1
+
+
+@pytest.mark.parametrize(("service", "expected"), [
+    ("192.0.2.79:8080", "http://192.0.2.79:8080"),
+    ("origin:8096", "http://origin:8096"),
+    ("origin:1", "http://origin:1"),
+    ("origin:65535", "http://origin:65535"),
+    ("http://origin:8096", "http://origin:8096"),
+    ("https://origin:443", "https://origin:443"),
+    ("ssh://origin:22", "ssh://origin:22"),
+    ("tcp://192.0.2.79:25565", "tcp://192.0.2.79:25565"),
+    ("unix:/path/to/socket", "unix:/path/to/socket"),
+    ("unix+tls:/path/to/socket", "unix+tls:/path/to/socket"),
+    ("bastion", "bastion"),
+    ("socks-proxy", "socks-proxy"),
+    ("hello_world", "hello_world"),
+    ("hello-world", "hello-world"),
+    ("http_status:404", "http_status:404"),
+    ("http_status:100", "http_status:100"),
+    ("http_status:999", "http_status:999"),
+])
+def test_form_normalizes_service_and_preserves_explicit_schemes(tmp_path: Path, service: str, expected: str):
+    document = {"ingress": [{"service": "http_status:404"}]}
+    ConfigStore.add(document, "  game.example.com  ", f"  {service}  ")
+    assert document["ingress"][0] == {"hostname": "game.example.com", "service": expected}
+
+
+@pytest.mark.parametrize("service", [
+    "192.0.2.333:8000", "http://192.0.2.333:8000", "origin:0", "origin:65536",
+    "http://origin:65536", "origin:abc", "http://origin:", "21.dsa.2321.d:8000",
+    "origin:8096/path", "http://origin:8096/path", "http://origin:8096?x=1",
+    "http://origin:8096#fragment", "unix:relative/path", "unix+tls:", "unix://host/path",
+    "http_status:000", "http_status:099", "http_status:99", "http_status:1000",
+])
+def test_form_rejects_invalid_service(tmp_path: Path, service: str):
+    document = {"ingress": [{"service": "http_status:404"}]}
+    with pytest.raises(ConfigError, match="Service"):
+        ConfigStore.add(document, "app.example.com", service)
+    assert document == {"ingress": [{"service": "http_status:404"}]}
+
+
+def test_form_edit_uses_same_validation_and_normalization(tmp_path: Path):
+    document = {"ingress": [{"hostname": "old.example.com", "service": "http://origin:8096"},
+                            {"service": "http_status:404"}]}
+    with pytest.raises(ConfigError):
+        ConfigStore.edit(document, 0, "dupadupa", "origin:8080")
+    assert document["ingress"][0]["hostname"] == "old.example.com"
+    ConfigStore.edit(document, 0, "  new.example.com  ", "192.0.2.79:8080")
+    assert document["ingress"][0] == {"hostname": "new.example.com", "service": "http://192.0.2.79:8080"}
+    with pytest.raises(ConfigError):
+        ConfigStore.edit(document, 0, "*.example.com", "origin:8096/path")
+    assert document["ingress"][0]["service"] == "http://192.0.2.79:8080"
+    ConfigStore.edit(document, 0, "  *.example.com  ", "unix+tls:/path/to/socket")
+    assert document["ingress"][0] == {"hostname": "*.example.com", "service": "unix+tls:/path/to/socket"}
+
+
+@pytest.mark.parametrize("service", ["socks-proxy", "hello-world", "hello_world"])
+def test_special_service_is_preserved_for_add_and_edit(service):
+    document = {"ingress": [{"service": "http_status:404"}]}
+    ConfigStore.add(document, "app.example.com", service)
+    assert document["ingress"][0]["service"] == service
+    document["ingress"][0]["service"] = "http://origin:8096"
+    ConfigStore.edit(document, 0, "app.example.com", service)
+    assert document["ingress"][0]["service"] == service
+
+
+def test_form_accepts_253_character_domain_name():
+    hostname = ".".join(["a" * 63] * 3 + ["b" * 61])
+    assert len(hostname) == 253
+    document = {"ingress": [{"service": "http_status:404"}]}
+    ConfigStore.add(document, hostname, "origin:8096")
+    assert document["ingress"][0]["hostname"] == hostname
+
+
+def test_form_accepts_wildcard_with_valid_domain_suffix():
+    document = {"ingress": [{"service": "http_status:404"}]}
+    ConfigStore.add(document, "*.example.com", "origin:8096")
+    assert document["ingress"][0]["hostname"] == "*.example.com"
+
+
+def test_form_accepts_wildcard_at_253_character_total_limit():
+    hostname = "*." + ".".join(["a" * 63] * 3 + ["b" * 59])
+    assert len(hostname) == 253
+    document = {"ingress": [{"service": "http_status:404"}]}
+    ConfigStore.add(document, hostname, "origin:8096")
+    assert document["ingress"][0]["hostname"] == hostname
+
+
+@pytest.mark.parametrize(("last_label_length", "total_length"), [(60, 254), (61, 255)])
+def test_form_rejects_wildcard_over_253_character_total_limit(last_label_length, total_length):
+    hostname = "*." + ".".join(["a" * 63] * 3 + ["b" * last_label_length])
+    assert len(hostname) == total_length
+    document = {"ingress": [{"service": "http_status:404"}]}
+    with pytest.raises(ConfigError, match="Hostname"):
+        ConfigStore.add(document, hostname, "origin:8096")
+    assert len(document["ingress"]) == 1
+
+
 def test_replace_preserves_mode_owner_and_group(tmp_path: Path):
     path = tmp_path / "config.yml"
     path.write_text(SOURCE)
