@@ -7,6 +7,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/install.sh"
 
@@ -53,7 +55,7 @@ def _installer(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     _stub(
         command_dir / "pip",
         'echo "ordinary pip output"\n'
-        'if [ "${MOCK_FAIL:-}" = pip ]; then echo "pip install failed: example diagnostic" >&2; exit 1; fi\n',
+        'if [ "${MOCK_FAIL:-}" = pip ]; then echo "pip install failed: example diagnostic" >&2; exit 23; fi\n',
     )
     _stub(
         command_dir / "venv-python",
@@ -67,7 +69,9 @@ def _installer(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         command_dir / "systemctl",
         'echo "ordinary systemctl output"\n'
         'if [ "$1" = enable ] && [ "${MOCK_FAIL:-}" = start ]; then '
-        'echo "service start failed: example diagnostic" >&2; exit 1; fi\n',
+        'echo "service start failed: example diagnostic" >&2; exit 1; fi\n'
+        'if [ "$1" = is-active ] && [ "${MOCK_FAIL:-}" = active ]; then '
+        'echo "service is inactive: example diagnostic" >&2; exit 1; fi\n',
     )
     _stub(command_dir / "journalctl", 'echo "cf-gui listening on 0.0.0.0:8001"\n')
     _stub(command_dir / "hostname", 'echo "127.0.0.1 192.0.2.9"\n')
@@ -87,30 +91,38 @@ def test_installer_success_is_compact_and_shows_password_once(tmp_path):
     assert "ordinary apt output" not in result.stdout
     assert "ordinary pip output" not in result.stdout
     assert "http://192.0.2.9:8001" in result.stdout
-    assert result.stdout.count("TEST_ADMIN_PASSWORD") == 1
+    assert (result.stdout + result.stderr).count("TEST_ADMIN_PASSWORD") == 1
     assert "cf-gui-update" in result.stdout
     assert result.stdout.isascii()
     assert "\x1b" not in result.stdout + result.stderr
     assert not list(tmp_path.glob("install.*.log"))
 
 
-def test_installer_failure_keeps_diagnostics_without_secrets(tmp_path):
+@pytest.mark.parametrize(
+    ("failure", "diagnostic"),
+    [("start", "service start failed: example diagnostic"), ("active", "service is inactive: example diagnostic")],
+)
+def test_installer_failure_keeps_diagnostics_without_secrets(tmp_path, failure, diagnostic):
     script, env = _installer(tmp_path)
-    env["MOCK_FAIL"] = "start"
+    env["MOCK_FAIL"] = failure
     result = subprocess.run(["bash", str(script)], env=env, text=True, capture_output=True, check=False, timeout=10)
 
     assert result.returncode != 0
     assert "[7/7] Starting cf-gui" in result.stdout
     assert "[FAIL]" in result.stderr
-    assert "service start failed: example diagnostic" in result.stderr
+    assert diagnostic in result.stderr
     assert "Installation failed during:\n  Starting cf-gui" in result.stderr
+    assert "Admin credentials were already created." in result.stderr
+    assert "Password: TEST_ADMIN_PASSWORD" in result.stderr
+    assert (result.stdout + result.stderr).count("TEST_ADMIN_PASSWORD") == 1
     log_path = Path(re.search(r"Full log: (.+)", result.stderr).group(1))
     assert log_path.is_file()
     log = log_path.read_text()
     assert "ordinary pip output" in log
-    assert "TEST_ADMIN_PASSWORD" not in log + result.stdout + result.stderr
-    assert "TEST_PASSWORD_HASH" not in log
-    assert "TEST_SECRET_KEY" not in log
+    assert "TEST_ADMIN_PASSWORD" not in log
+    assert "TEST_ADMIN_PASSWORD" not in (tmp_path / "cf-gui.env").read_text()
+    assert "TEST_PASSWORD_HASH" not in log + result.stdout + result.stderr
+    assert "TEST_SECRET_KEY" not in log + result.stdout + result.stderr
 
 
 def test_existing_installation_points_to_updater(tmp_path):
@@ -122,6 +134,7 @@ def test_existing_installation_points_to_updater(tmp_path):
     assert "[1/7] Checking system" in result.stdout
     assert "cf-gui-update" in result.stderr
     assert "ordinary apt output" not in result.stdout + result.stderr
+    assert "TEST_ADMIN_PASSWORD" not in result.stdout + result.stderr
 
 
 def test_failed_pip_reports_the_python_environment_step(tmp_path):
@@ -129,10 +142,11 @@ def test_failed_pip_reports_the_python_environment_step(tmp_path):
     env["MOCK_FAIL"] = "pip"
     result = subprocess.run(["bash", str(script)], env=env, text=True, capture_output=True, check=False, timeout=10)
 
-    assert result.returncode != 0
+    assert result.returncode == 23
     assert "Installation failed during:\n  Creating Python environment" in result.stderr
     assert "pip install failed: example diagnostic" in result.stderr
     assert "TEST_ADMIN_PASSWORD" not in result.stdout + result.stderr
+    assert "Admin credentials were already created." not in result.stderr
 
 
 def test_missing_ip_and_port_show_clear_placeholders(tmp_path):

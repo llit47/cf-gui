@@ -9,6 +9,7 @@ REPO_URL=https://github.com/llit47/cf-gui.git
 LOG_FILE=$(mktemp /tmp/cf-gui-install.XXXXXX.log)
 STEP_NAME='Installer setup'
 STEP_OPEN=0
+ADMIN_PASSWORD=''
 GREEN='' RED='' YELLOW='' RESET=''
 if [[ -t 1 && -z ${NO_COLOR+x} ]]; then
   GREEN=$'\033[32m'
@@ -37,6 +38,10 @@ finish() {
   if [[ -e $LOG_FILE ]]; then
     printf 'Full log: %s\n' "$LOG_FILE" >&2
   fi
+  if [[ -n $ADMIN_PASSWORD ]]; then
+    printf '\nAdmin credentials were already created.\n\n  User:     admin\n  Password: %s\n\nSave this password before fixing the installation.\nIt is not stored in plaintext.\n' "$ADMIN_PASSWORD" >&2
+  fi
+  return "$status"
 }
 trap finish EXIT
 

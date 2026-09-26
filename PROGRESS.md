@@ -129,8 +129,8 @@ Weryfikacja: `pytest -q` — 104 testy zaliczone; `compileall`, `bash -n` i `git
 
 ## PR 4 — polished installer UX
 
-Zrobione: instalator pokazuje siedem krótkich etapów w ASCII. Zwykły output `apt`, `git`, venv, `pip` i `systemctl` trafia do tymczasowego logu; przy błędzie widać nazwę etapu, ostatnie 30 linii diagnostyki i ścieżkę zachowanego logu. Po sukcesie log jest usuwany. Kolory są dostępne tylko przy TTY i bez `NO_COLOR`.
+Zrobione: instalator pokazuje siedem krótkich etapów w ASCII. Zwykły output `apt`, `git`, venv, `pip` i `systemctl` trafia do tymczasowego logu; przy błędzie widać nazwę etapu, ostatnie 30 linii diagnostyki i ścieżkę zachowanego logu. Jeśli hasło admina zostało już wygenerowane, handler błędu wypisuje je raz na terminalu, lecz nie dodaje do logu ani pliku env w plaintext. Po sukcesie log jest usuwany. Kolory są dostępne tylko przy TTY i bez `NO_COLOR`.
 
 Podsumowanie sukcesu pokazuje URL z portem odczytanym z dziennika usługi oraz lokalnym IPv4 z `hostname -I` (z preferencją dla adresu prywatnego). Gdy odczyt zawiedzie, pojawia się czytelny placeholder i ostrzeżenie; instalacja nadal kończy się sukcesem. Login `admin`, wygenerowane hasło, ścieżka configu oraz komendy obsługi są wypisywane na końcu. Hasło nie jest zapisywane w logu instalatora.
 
-Weryfikacja: `pytest -q` — 110 testów zaliczonych, w tym sześć testów instalatora z podstawionymi komendami; `compileall`, `bash -n` i `git diff --check` przeszły. Nadal potrzebny jest test rzeczywistej instalacji na testowym LXC.
+Weryfikacja: `pytest -q` — 111 testów zaliczonych, w tym siedem testów instalatora z podstawionymi komendami; `compileall`, `bash -n` i `git diff --check` przeszły. Nadal potrzebny jest test rzeczywistej instalacji na testowym LXC.
